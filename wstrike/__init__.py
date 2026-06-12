@@ -9,5 +9,5 @@ The framework never reinvents scanners — it chains, dedupes and reports them.
 
 __title__ = "WebStrike"
 __author__ = "NiMAA"
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 __tagline__ = "Automated Web Pentesting Framework"

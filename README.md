@@ -27,10 +27,11 @@ order, modules inside a phase run **concurrently**. Output flows through a share
 crawl/scan targets, and so on.
 
 ```
-recon  →  probe  →  crawl  →  content  →  vulnscan  →  webtest  →  report
-crt.sh    whatweb   katana    ffuf        nuclei       sqlmap      md + json
-subfinder                                              dalfox
+recon  →  probe  →  crawl  →  content  →  vulnscan  →  webtest  →  triage  →  report
+crt.sh    whatweb   katana    ffuf        nuclei       sqlmap      LLM        md/html
+subfinder           gowitness                          dalfox      (any)      json/sarif
 dnsx                                                   param-audit
+                                                       oast-ssrf
 ```
 
 | Phase     | Module             | Tool       | Intrusive | What it does                          |
@@ -40,11 +41,14 @@ dnsx                                                   param-audit
 | recon     | `dnsx-resolve`     | dnsx       |     no    | Keep only resolvable subdomains       |
 | probe     | `http-probe`       | whatweb    |     no    | Liveness + tech fingerprint           |
 | crawl     | `katana-crawl`     | katana     |  **yes**  | Active crawl for endpoints            |
+| crawl     | `screenshot`       | gowitness  |     no    | Screenshot live hosts (visual triage) |
 | content   | `content-discovery`| ffuf       |  **yes**  | Directory / file brute force          |
 | vulnscan  | `nuclei-scan`      | nuclei     |  **yes**  | Template-driven vuln scanning         |
 | webtest   | `sqli-scan`        | sqlmap     |  **yes**  | SQL injection (CWE-89)                |
 | webtest   | `xss-scan`         | dalfox     |  **yes**  | Reflected/DOM XSS (CWE-79)            |
 | webtest   | `param-audit`      | —          |     no    | Flag SSRF/IDOR-prone params (CWE-918/639) |
+| webtest   | `oast-ssrf`        | interactsh |  **yes**  | Blind SSRF via OAST callback (CWE-918) |
+| triage    | `ai-triage`        | LLM (any)  |     no    | AI prioritization, chains, next steps |
 
 Missing tools are **skipped with a clear message**, never a crash.
 
@@ -119,6 +123,26 @@ is the payoff of an orchestrator over a static script:
   follow-up finding ("Spring — probe /actuator …").
 - `nuclei-scan.tech_tags: true` (opt-in) → restrict nuclei to templates matching
   the detected stack (faster, narrower).
+
+## AI triage (the brain)
+
+Most orchestrators stop at a flat list of findings. WebStrike can hand the
+**whole engagement** to an LLM that acts as a senior pentester — ranking by
+real-world exploitability (not just scanner severity), spotting **attack chains**
+where findings combine, and suggesting the next moves. Output lands in every
+report (Markdown/HTML/JSON) and the console.
+
+**Provider-agnostic** — it speaks the standard OpenAI-compatible API, so use a
+hosted model *or a local one* (Ollama / LM Studio / vLLM). It's **opt-in**: it
+only runs when the API key env var is set, and it warns before any data leaves
+the host (use a local model for sensitive engagements).
+
+```bash
+export WEBSTRIKE_LLM_KEY=...           # your provider's key (never committed)
+# point at a local model for full privacy:
+#   profile llm.base_url: http://localhost:11434/v1   (Ollama)
+./webstrike.py scan acme.com --mode auto --enable ai-triage
+```
 
 ## Install
 
@@ -206,9 +230,11 @@ CI (`.github/workflows/ci.yml`) runs the suite on Python 3.11 & 3.12.
   **proxy**, **OAST/interactsh blind SSRF**, **Slack/Discord notifications**,
   **HTML + SARIF reports**, **gowitness screenshots**, **subfinder API keys**,
   and a **pytest suite + CI** ✅
+- **v0.2.0:** **AI triage engine** (provider-agnostic LLM: prioritize, correlate
+  attack chains, suggest next steps) + hardening (structured sqlmap/dalfox
+  parsing, true global rate limiting, PSL-based scope matching) ✅
 - **Next:** wayback/gau URL sources; amass; nuclei `-as` automatic scan
-- **later:** REST API + web dashboard wrapping this CLI engine (CLI-first);
-  AI triage to prioritize findings and suggest the next module
+- **later:** REST API + web dashboard wrapping this CLI engine (CLI-first)
 
 ## Scope & ethics
 
