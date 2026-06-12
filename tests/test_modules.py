@@ -58,6 +58,28 @@ def test_sqlmap_parser_extracts_injection(tmp_path):
     assert any(f.severity == "high" and "id" in f.title for f in ctx.findings)
 
 
+def test_sqlmap_csv_parser_is_primary(tmp_path):
+    csv = tmp_path / "r.csv"
+    csv.write_text(
+        'Target URL,Place,Parameter,Technique(s),Note\n'
+        '"http://app.tld/q?id=1",GET,id,"boolean-based blind",\n'
+    )
+    rows = SqliScan._parse_csv(csv)
+    assert rows == [{"url": "http://app.tld/q?id=1", "parameter": "id",
+                     "place": "GET", "technique": "boolean-based blind"}]
+    assert SqliScan._parse_csv(tmp_path / "missing.csv") == []
+
+
+def test_dalfox_parser_handles_array_and_jsonl():
+    from wstrike.modules.webtest import XssScan
+    arr = '[{"param":"q","data":"p1"}]'
+    jsonl = '{"param":"x","data":"p2"}\n{"param":"y","data":"p3"}'
+    assert len(XssScan._parse(arr)) == 1
+    assert len(XssScan._parse(jsonl)) == 2
+    assert XssScan._parse("") == []
+    assert XssScan._parse("not json") == []
+
+
 def test_oast_inject_preserves_other_params():
     out = inject("https://a/f?url=x&id=5", "url", "http://c/")
     assert "id=5" in out and "url=http" in out

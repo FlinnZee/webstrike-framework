@@ -6,6 +6,7 @@ The param auditor is passive (no extra requests) so it always runs as a helper.
 """
 from __future__ import annotations
 
+import csv
 import json
 import re
 from urllib.parse import parse_qs, urlparse
@@ -24,9 +25,9 @@ class SqliScan(Module):
     intrusive = True
     description = "SQL injection testing of parameterized URLs (sqlmap)"
 
+    # Fallback patterns only — primary source is sqlmap's structured CSV.
     _RE_TESTING = re.compile(r"testing URL '([^']+)'")
     _RE_VULN = re.compile(r"parameter '([^']+)' .*is vulnerable", re.IGNORECASE)
-    _RE_DBMS = re.compile(r"back-end DBMS:\s*(.+)")
 
     async def run(self, ctx: Context) -> None:
         urls = ctx.param_urls()
@@ -36,6 +37,7 @@ class SqliScan(Module):
 
         targets = ctx.artifact_path("sqli_targets.txt")
         targets.write_text("\n".join(urls) + "\n")
+        results_csv = ctx.artifact_path("sqli_results.csv")
         sqlmap = tools.resolve("sqlmap")
         cmd = [
             sqlmap, "-m", str(targets), "--batch", "--smart",
@@ -43,6 +45,7 @@ class SqliScan(Module):
             "--level", str(self.options.get("level", 1)),
             "--risk", str(self.options.get("risk", 1)),
             "--output-dir", str(ctx.artifact_path("sqlmap")),
+            "--results-file", str(results_csv),   # structured output (not stdout)
             *ctx.auth.sqlmap_args(),
             *proxy.tool_args("sqlmap", ctx.proxy),
         ]
@@ -52,32 +55,68 @@ class SqliScan(Module):
         info(f"sqlmap testing {len(urls)} URL(s) [level={self.options.get('level', 1)}]")
         res = await runner.run(cmd, timeout=self.options.get("timeout", 1800))
 
-        current = ""
-        dbms = ""
-        found = 0
+        # Primary: parse the machine-readable CSV. Fallback: scrape stdout, so a
+        # CSV-format change can never turn a real SQLi into a silent miss.
+        rows = self._parse_csv(results_csv)
+        found = (self._emit_csv(ctx, rows) if rows
+                 else self._emit_stdout_fallback(ctx, res))
+        info(f"sqli-scan: {found} injectable parameter(s)")
+
+    @staticmethod
+    def _parse_csv(path) -> list[dict]:
+        if not path.exists():
+            return []
+        out = []
+        try:
+            with open(path, newline="", encoding="utf-8", errors="replace") as fh:
+                for raw in csv.DictReader(fh):
+                    row = {(k or "").strip(): (v or "").strip() for k, v in raw.items()}
+                    param = row.get("Parameter", "")
+                    if not param:
+                        continue
+                    out.append({
+                        "url": row.get("Target URL") or row.get("Target", ""),
+                        "parameter": param,
+                        "place": row.get("Place", ""),
+                        "technique": row.get("Technique(s)") or row.get("Technique", ""),
+                    })
+        except OSError:
+            return []
+        return out
+
+    def _emit_csv(self, ctx: Context, rows: list[dict]) -> int:
+        for r in rows:
+            bad(f"[HIGH] SQLi: parameter '{r['parameter']}' on {r['url']}")
+            ctx.add_finding(Finding(
+                title=f"SQL injection in parameter '{r['parameter']}'",
+                severity="high", module=self.name, target=r["url"] or "?",
+                evidence=f"sqlmap confirmed injectable ({r['place']}) "
+                         f"via {r['technique'] or 'unknown technique'}",
+                references=["https://cwe.mitre.org/data/definitions/89.html"],
+                metadata={"parameter": r["parameter"], "place": r["place"],
+                          "technique": r["technique"], "cwe": "CWE-89"},
+            ))
+        return len(rows)
+
+    def _emit_stdout_fallback(self, ctx: Context, res) -> int:
+        current, found = "", 0
         for line in res.stdout.splitlines():
             m = self._RE_TESTING.search(line)
             if m:
                 current = m.group(1)
-            d = self._RE_DBMS.search(line)
-            if d:
-                dbms = d.group(1).strip()
             v = self._RE_VULN.search(line)
             if v:
                 found += 1
                 bad(f"[HIGH] SQLi: parameter '{v.group(1)}' on {current}")
-                ctx.add_finding(
-                    Finding(
-                        title=f"SQL injection in parameter '{v.group(1)}'",
-                        severity="high",
-                        module=self.name,
-                        target=current or "?",
-                        evidence=f"sqlmap confirmed injectable; DBMS: {dbms or 'unknown'}",
-                        references=["https://cwe.mitre.org/data/definitions/89.html"],
-                        metadata={"parameter": v.group(1), "dbms": dbms, "cwe": "CWE-89"},
-                    )
-                )
-        info(f"sqli-scan: {found} injectable parameter(s)")
+                ctx.add_finding(Finding(
+                    title=f"SQL injection in parameter '{v.group(1)}'",
+                    severity="high", module=self.name, target=current or "?",
+                    evidence="sqlmap confirmed injectable (parsed from stdout)",
+                    references=["https://cwe.mitre.org/data/definitions/89.html"],
+                    metadata={"parameter": v.group(1), "cwe": "CWE-89",
+                              "source": "stdout-fallback"},
+                ))
+        return found
 
 
 class XssScan(Module):
@@ -103,14 +142,7 @@ class XssScan(Module):
         )
 
         found = 0
-        for line in res.lines():
-            line = line.strip().rstrip(",")
-            if not line.startswith("{"):
-                continue
-            try:
-                ev = json.loads(line)
-            except json.JSONDecodeError:
-                continue
+        for ev in self._parse(res.stdout):
             poc = ev.get("data") or ev.get("poc") or ev.get("message_str", "")
             sev = (ev.get("severity") or "medium").lower()
             param = ev.get("param", "")
@@ -128,6 +160,34 @@ class XssScan(Module):
                 )
             )
         info(f"xss-scan: {found} XSS finding(s)")
+
+    @staticmethod
+    def _parse(stdout: str) -> list[dict]:
+        """Tolerant of dalfox emitting either a single JSON array or JSONL.
+
+        dalfox's output shape has varied across versions; rather than assume one,
+        try array-of-objects first, then fall back to per-line objects.
+        """
+        text = stdout.strip()
+        if not text:
+            return []
+        try:
+            data = json.loads(text)
+            if isinstance(data, list):
+                return [d for d in data if isinstance(d, dict)]
+            if isinstance(data, dict):
+                return [data]
+        except json.JSONDecodeError:
+            pass
+        out = []
+        for line in text.splitlines():
+            line = line.strip().rstrip(",")
+            if line.startswith("{"):
+                try:
+                    out.append(json.loads(line))
+                except json.JSONDecodeError:
+                    continue
+        return out
 
 
 class ParamAudit(Module):
