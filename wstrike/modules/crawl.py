@@ -17,6 +17,7 @@ class KatanaCrawl(Module):
     phase = "crawl"
     requires = ["katana"]
     intrusive = True
+    rate_aware = True
     description = "Active crawl of live URLs to discover endpoints (katana)"
 
     async def run(self, ctx: Context) -> None:
@@ -25,11 +26,13 @@ class KatanaCrawl(Module):
             return
         katana = tools.resolve("katana")
         depth = str(self.options.get("depth", 2))
+        cmd = [katana, "-silent", "-d", depth, "-jc", "-list", "-",
+               *ctx.auth.h_args("-H"), *proxy.tool_args("katana", ctx.proxy)]
+        if ctx.mode == "auto":
+            cmd += ["-rate-limit", str(ctx.effective_rate())]
         info(f"katana crawling {len(roots)} root(s) [depth={depth}]")
         res = await runner.run(
-            [katana, "-silent", "-d", depth, "-jc", "-list", "-",
-             *ctx.auth.h_args("-H"), *proxy.tool_args("katana", ctx.proxy)],
-            stdin="\n".join(roots),
+            cmd, stdin="\n".join(roots),
             timeout=self.options.get("timeout", 600),
         )
 
