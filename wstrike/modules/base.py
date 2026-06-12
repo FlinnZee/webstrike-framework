@@ -10,7 +10,7 @@ from wstrike.core import tools
 from wstrike.core.context import Context
 
 # Pipeline order. Modules declare which phase they belong to.
-PHASES = ["recon", "probe", "crawl", "content", "vulnscan", "webtest"]
+PHASES = ["recon", "probe", "crawl", "content", "vulnscan", "webtest", "triage"]
 
 
 class Module(ABC):

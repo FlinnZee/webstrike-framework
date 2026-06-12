@@ -50,6 +50,8 @@ def _json_report(ctx: Context, diff=None) -> str:
         "summary": _counts(ctx),
         "findings": [f.to_dict() for f in ctx.findings],
     }
+    if ctx.data.get("triage"):
+        report["triage"] = ctx.data["triage"]
     if diff is not None:
         report["diff"] = {
             "first_run": diff.first_run,
@@ -86,6 +88,29 @@ def _markdown_report(ctx: Context, diff=None) -> str:
             lines.append("")
             for f in diff.new:
                 lines.append(f"- **[{f.severity.upper()}]** {f.title} — `{f.target}`")
+            lines.append("")
+    triage = ctx.data.get("triage")
+    if triage:
+        lines += ["## AI Triage", ""]
+        if triage.get("summary"):
+            lines += [triage["summary"], ""]
+        if triage.get("priorities"):
+            lines.append("**Prioritized:**")
+            for p in triage["priorities"]:
+                lines.append(
+                    f"{p.get('rank', '?')}. [{p.get('exploitability', '?')}] "
+                    f"{p.get('title', '')} — {p.get('why', '')}"
+                )
+            lines.append("")
+        if triage.get("chains"):
+            lines.append("**Attack chains:**")
+            for c in triage["chains"]:
+                fs = " → ".join(c.get("findings", []))
+                lines.append(f"- **{c.get('name', '')}**: {fs} — {c.get('impact', '')}")
+            lines.append("")
+        if triage.get("next_steps"):
+            lines.append("**Suggested next steps:**")
+            lines += [f"- {s}" for s in triage["next_steps"]]
             lines.append("")
     lines += [
         "## Summary",
@@ -146,6 +171,32 @@ def _html_report(ctx: Context, diff=None) -> str:
         new_banner = (f'<p class="new">🆕 {len(diff.new)} new since last scan · '
                       f'{len(diff.known)} known · {len(diff.resolved)} resolved</p>')
 
+    triage_html = ""
+    t = ctx.data.get("triage")
+    if t:
+        parts = ['<div class="triage"><h2>AI Triage</h2>']
+        if t.get("summary"):
+            parts.append(f"<p>{e(t['summary'])}</p>")
+        if t.get("priorities"):
+            parts.append("<ol>")
+            for p in t["priorities"]:
+                parts.append(f"<li><b>[{e(p.get('exploitability', ''))}]</b> "
+                             f"{e(p.get('title', ''))} — {e(p.get('why', ''))}</li>")
+            parts.append("</ol>")
+        if t.get("chains"):
+            parts.append("<p><b>Attack chains:</b></p><ul>")
+            for c in t["chains"]:
+                fs = " &rarr; ".join(e(x) for x in c.get("findings", []))
+                parts.append(f"<li><b>{e(c.get('name', ''))}:</b> {fs} — "
+                             f"{e(c.get('impact', ''))}</li>")
+            parts.append("</ul>")
+        if t.get("next_steps"):
+            parts.append("<p><b>Next steps:</b></p><ul>")
+            parts += [f"<li>{e(s)}</li>" for s in t["next_steps"]]
+            parts.append("</ul>")
+        parts.append("</div>")
+        triage_html = "".join(parts)
+
     return f"""<!doctype html><html><head><meta charset="utf-8">
 <title>WebStrike — {e(ctx.target)}</title><style>
 body{{font:14px/1.5 system-ui,sans-serif;margin:2rem;color:#222;background:#fafafa}}
@@ -155,11 +206,14 @@ table{{border-collapse:collapse;width:100%;margin-top:1rem;background:#fff}}
 th,td{{border:1px solid #e0e0e0;padding:6px 10px;text-align:left;vertical-align:top}}
 th{{background:#f0f0f0}} code{{background:#f4f4f4;padding:1px 4px;border-radius:3px}}
 .dot{{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px}}
+.triage{{background:#fff;border:1px solid #e0e0e0;border-left:4px solid #6a1b9a;
+padding:10px 16px;margin-top:1rem}} .triage h2{{margin-top:0}}
 </style></head><body>
 <h1>WebStrike Report</h1>
 <p class="sub">{e(ctx.target)} · {e(ctx.started_at)} · v{__version__} · by {__author__}</p>
 <p>{"".join(chip(s) for s in reversed(SEVERITIES))}</p>
 {new_banner}
+{triage_html}
 <table><thead><tr><th>Severity</th><th>Finding</th><th>Target</th>
 <th>Module</th><th>Evidence</th></tr></thead>
 <tbody>{"".join(rows) or '<tr><td colspan=5>No findings.</td></tr>'}</tbody></table>

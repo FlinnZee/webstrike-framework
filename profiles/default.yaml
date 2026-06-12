@@ -15,6 +15,18 @@ auth:
   # cookies: "session=abc; csrf=def"
   # user_agent: "Mozilla/5.0 (engagement-xyz)"
 
+# AI triage (optional) — an LLM prioritizes findings, spots attack chains, and
+# suggests next steps. Provider-agnostic: any OpenAI-compatible endpoint
+# (OpenAI, OpenRouter, Azure, or a LOCAL model via Ollama/LM Studio/vLLM).
+# Opt-in: only runs when the API key env var is set. The key is NEVER stored
+# here — export it instead, e.g.  export WEBSTRIKE_LLM_KEY=sk-...
+# Note: finding data is sent to the endpoint; use a local model for sensitive work.
+llm:
+  base_url: "https://api.openai.com/v1"   # or http://localhost:11434/v1 (Ollama), etc.
+  model: "gpt-4o-mini"                    # override with your provider's model
+  api_key_env: "WEBSTRIKE_LLM_KEY"
+  temperature: 0.2
+
 # Webhook summary on finish (Slack/Discord auto-detected). --notify overrides.
 notify:
   webhook: ""             # https://hooks.slack.com/... or https://discord.com/api/webhooks/...
