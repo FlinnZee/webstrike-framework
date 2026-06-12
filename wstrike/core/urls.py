@@ -11,11 +11,21 @@ def hostname(target: str) -> str:
 
 
 def base_domain(host: str) -> str:
-    """Naive registrable-domain extractor (last two labels).
+    """Registrable-domain extractor (scope-matching is safety-critical).
 
-    Good enough for v1 — does not handle multi-part TLDs like co.uk.
+    Uses the Public Suffix List via ``tldextract`` when available so multi-part
+    TLDs (co.uk, com.au, …) resolve correctly. Falls back to a last-two-labels
+    heuristic only if tldextract isn't installed.
     """
     host = hostname(host)
+    try:
+        import tldextract
+
+        ext = tldextract.extract(host)
+        if ext.domain and ext.suffix:
+            return f"{ext.domain}.{ext.suffix}"
+    except Exception:
+        pass
     parts = host.split(".")
     return ".".join(parts[-2:]) if len(parts) >= 2 else host
 
