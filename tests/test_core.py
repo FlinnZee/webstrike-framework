@@ -77,7 +77,9 @@ def test_base_domain_handles_multipart_tlds():
 
 # --- global rate budget division ------------------------------------------
 
-def test_effective_rate_is_a_true_global_ceiling():
+def test_effective_rate_is_a_conservative_upper_bound():
+    # The budget is divided so the aggregate stays AT OR BELOW the cap
+    # (under-shoots, never over-shoots) — a conservative bound, not a token bucket.
     from pathlib import Path
     from wstrike.core.context import Context
 

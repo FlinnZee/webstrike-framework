@@ -41,9 +41,11 @@ notify:
 roe:
   scope_allow: []          # e.g. ["*.acme.com", "acme.com"]  ([] = no restriction)
   deny_paths: []           # e.g. ["/logout", "/*/delete*"]   (never touched)
-  rate_limit: 150          # GLOBAL req/sec ceiling (auto mode): split across
-                           # concurrent targets x rate-aware modules so the
-                           # aggregate outbound rate stays at/below this value
+  rate_limit: 150          # Global req/sec BUDGET (auto mode): statically split
+                           # across concurrent targets x rate-aware tools so the
+                           # aggregate stays at/below this. Conservative upper
+                           # bound (under-shoots), not a true token bucket — it
+                           # trusts each tool's own rate flag. See README.
   max_subdomains: 0        # 0 = unlimited
 
 # Per-module options. Keys match each module's `name`.

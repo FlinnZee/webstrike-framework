@@ -63,10 +63,18 @@ class Context:
         self.findings.append(finding)
 
     def effective_rate(self) -> int:
-        """The per-tool req/sec so the *aggregate* outbound rate stays at/below
-        ``roe.rate_limit`` — divided across concurrently-running targets and the
-        rate-aware modules sharing the current phase. This is what makes the RoE
-        ceiling an actual global guarantee, not a per-tool value."""
+        """Each rate-aware tool's share of the global ``roe.rate_limit`` budget,
+        computed by static division across concurrent targets x rate-aware
+        modules sharing a phase.
+
+        This is a *conservative upper bound*, NOT a true shared token bucket:
+        - it under-shoots rather than over-shoots (safe for staying in scope);
+        - it trusts each tool to honour its own rate flag (we don't meter the
+          actual requests — those happen inside the external binary);
+        - a tool that finishes early does NOT hand its freed share to others;
+        - tools without a usable rate flag are not governed by it.
+        A true global limiter would meter requests at a shared choke point
+        (e.g. an internal throttling proxy) — see the roadmap."""
         split = max(1, int(self.data.get("_rate_split", 1)))
         divisor = max(1, self.rate_divisor) * split
         return max(1, self.roe.rate_limit // divisor)

@@ -75,12 +75,23 @@ Set in the profile under `roe:` and enforced hardest in `auto` mode:
 roe:
   scope_allow: ["*.acme.com", "acme.com"]   # only touch these hosts ([] = any)
   deny_paths:  ["/logout", "/*/delete*"]    # never request these paths
-  rate_limit:  100                          # GLOBAL req/sec ceiling — split across
-                                            # concurrent targets x rate-aware modules
+  rate_limit:  100                          # global req/sec budget (see below)
   max_subdomains: 0                         # 0 = unlimited
 ```
 
 Out-of-scope hosts and denied paths are dropped before any tool touches them.
+
+**What `rate_limit` actually is (precisely):** a *conservative global budget*,
+not a token bucket. In `auto` mode it's statically divided across concurrent
+targets × rate-aware tools and each tool gets its slice via its own rate flag
+(nuclei/ffuf/katana `-rate-limit` / `-rate`). So the **aggregate outbound rate
+stays at or below the configured value — it under-shoots, never over-shoots**,
+which is the safe direction for staying inside a contractual cap. The honest
+limitations: it trusts each tool to honour its flag (requests aren't metered at a
+shared choke point), a tool finishing early doesn't hand its freed share to the
+others, and tools without a usable rate flag (sqlmap/dalfox are delay/concurrency
+based) aren't governed by it. A *true* global limiter — metering requests at a
+shared choke point (an internal throttling proxy) — is on the roadmap.
 
 ## Authenticated scanning
 
@@ -233,7 +244,9 @@ CI (`.github/workflows/ci.yml`) runs the suite on Python 3.11 & 3.12.
 - **v0.2.0:** **AI triage engine** (provider-agnostic LLM: prioritize, correlate
   attack chains, suggest next steps) + hardening (structured sqlmap/dalfox
   parsing, true global rate limiting, PSL-based scope matching) ✅
-- **Next:** wayback/gau URL sources; amass; nuclei `-as` automatic scan
+- **Next:** a *true* global rate limiter (meter requests at a shared choke point
+  via an internal throttling proxy, replacing the conservative budget division);
+  wayback/gau URL sources; amass; nuclei `-as` automatic scan
 - **later:** REST API + web dashboard wrapping this CLI engine (CLI-first)
 
 ## Scope & ethics
