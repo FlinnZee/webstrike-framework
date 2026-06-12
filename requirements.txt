@@ -1,0 +1,4 @@
+# WebStrike Python dependencies (the heavy lifting is done by external Kali
+# tools — these are just for UX and config parsing).
+rich>=13.0      # pretty terminal output (optional; degrades gracefully)
+pyyaml>=6.0     # scan profile parsing

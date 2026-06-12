@@ -1,0 +1,2 @@
+# Dev/test dependencies (CI installs these on top of requirements.txt)
+pytest>=7.0

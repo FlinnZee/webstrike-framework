@@ -1,0 +1,79 @@
+# WebStrike default scan profile — created by NiMAA
+#
+# Run modes (set with --mode, default: manual):
+#   manual : passive recon + probe run automatically; intrusive modules
+#            (content-discovery, katana-crawl, nuclei-scan) are skipped unless
+#            you opt in with --enable <name> or --only <name>.
+#   auto   : every module runs, bounded by the `roe` rules below.
+
+# Authenticated scanning — injected into every tool (whatweb/katana/ffuf/
+# nuclei/sqlmap/dalfox) so you can test the surface behind a login.
+# CLI --header / --cookie override/extend these.
+auth:
+  headers: []              # e.g. ["X-Api-Key: abc123"]
+  # bearer_token: "eyJ..."  # becomes  Authorization: Bearer eyJ...
+  # cookies: "session=abc; csrf=def"
+  # user_agent: "Mozilla/5.0 (engagement-xyz)"
+
+# Webhook summary on finish (Slack/Discord auto-detected). --notify overrides.
+notify:
+  webhook: ""             # https://hooks.slack.com/... or https://discord.com/api/webhooks/...
+  min_severity: high      # only notify if a finding at/above this exists
+  type: auto              # auto | slack | discord | generic
+
+# Route every tool's traffic through an upstream proxy (e.g. Burp) for manual
+# follow-up. CLI --proxy overrides this.
+# proxy: "http://127.0.0.1:8080"
+
+# Rules of Engagement — the safety envelope, enforced hardest in --mode auto.
+roe:
+  scope_allow: []          # e.g. ["*.acme.com", "acme.com"]  ([] = no restriction)
+  deny_paths: []           # e.g. ["/logout", "/*/delete*"]   (never touched)
+  rate_limit: 150          # global req/sec ceiling in auto mode
+  max_subdomains: 0        # 0 = unlimited
+
+# Per-module options. Keys match each module's `name`.
+modules:
+  crtsh: {}
+  subfinder:
+    all: false              # -all: query every source (slower)
+    # provider_config: ~/.config/subfinder/provider-config.yaml   # API keys
+  dnsx-resolve: {}
+
+  http-probe:
+    max_targets: 50         # cap how many discovered hosts to probe
+
+  katana-crawl:
+    depth: 2
+    timeout: 600
+
+  screenshot:
+    timeout: 10             # per-host gowitness timeout (s)
+
+  content-discovery:
+    # wordlist: /usr/share/seclists/Discovery/Web-Content/raft-medium-words.txt
+    match_codes: "200,204,301,302,307,401,403"
+    extensions: ""          # e.g. ".php,.bak,.old"
+    rate: 0                 # 0 = unthrottled in manual mode
+    timeout: 600
+
+  nuclei-scan:
+    severity: "low,medium,high,critical"
+    rate_limit: 150
+    timeout: 1800
+    tech_tags: false        # true = restrict to templates matching detected stack (faster, narrower)
+    # templates: /root/nuclei-templates/http/cves/
+
+  sqli-scan:
+    level: 1                # sqlmap --level (1-5)
+    risk: 1                 # sqlmap --risk  (1-3)
+    timeout: 1800
+
+  xss-scan:
+    timeout: 1800
+
+  param-audit: {}           # passive SSRF/IDOR candidate finder
+
+  oast-ssrf:
+    # payload: "abcd.burpcollaborator.net"   # your listener (if no interactsh-client)
+    poll_seconds: 25        # how long to wait for interactsh callbacks
