@@ -26,14 +26,15 @@ class ContentDiscovery(Module):
     phase = "content"
     requires = ["ffuf"]
     intrusive = True
+    rate_aware = True
     description = "Directory & file discovery (ffuf)"
 
     async def run(self, ctx: Context) -> None:
         wordlist = self._wordlist(ctx)
         ext = self.options.get("extensions", "")
         mc = self.options.get("match_codes", "200,204,301,302,307,401,403")
-        # In auto mode honour the RoE rate ceiling; manual uses the profile value.
-        rate = ctx.roe.rate_limit if ctx.mode == "auto" else self.options.get("rate", 0)
+        # Auto mode: take a share of the global RoE budget; manual: profile value.
+        rate = ctx.effective_rate() if ctx.mode == "auto" else self.options.get("rate", 0)
 
         for base in ctx.live_urls():
             if not ctx.roe.allows(base):

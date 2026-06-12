@@ -52,6 +52,7 @@ class Context:
     roe: RulesOfEngagement = field(default_factory=RulesOfEngagement)
     auth: AuthConfig = field(default_factory=AuthConfig)
     proxy: str = ""                                   # upstream proxy URL (Burp)
+    rate_divisor: int = 1                             # how many targets run concurrently
     findings: list[Finding] = field(default_factory=list)
     data: dict = field(default_factory=dict)          # cross-module scratchpad
     started_at: str = field(
@@ -60,6 +61,15 @@ class Context:
 
     def add_finding(self, finding: Finding) -> None:
         self.findings.append(finding)
+
+    def effective_rate(self) -> int:
+        """The per-tool req/sec so the *aggregate* outbound rate stays at/below
+        ``roe.rate_limit`` — divided across concurrently-running targets and the
+        rate-aware modules sharing the current phase. This is what makes the RoE
+        ceiling an actual global guarantee, not a per-tool value."""
+        split = max(1, int(self.data.get("_rate_split", 1)))
+        divisor = max(1, self.rate_divisor) * split
+        return max(1, self.roe.rate_limit // divisor)
 
     # --- cross-phase data accessors -------------------------------------
 

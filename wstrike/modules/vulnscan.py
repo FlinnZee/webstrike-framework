@@ -18,6 +18,7 @@ class NucleiScan(Module):
     phase = "vulnscan"
     requires = ["nuclei"]
     intrusive = True
+    rate_aware = True
     description = "Template-driven vulnerability scanning (nuclei)"
 
     async def run(self, ctx: Context) -> None:
@@ -31,7 +32,7 @@ class NucleiScan(Module):
 
         nuclei = tools.resolve("nuclei")
         severity = self.options.get("severity", "low,medium,high,critical")
-        rate = ctx.roe.rate_limit if ctx.mode == "auto" else self.options.get("rate_limit", 150)
+        rate = ctx.effective_rate() if ctx.mode == "auto" else self.options.get("rate_limit", 150)
         cmd = [
             nuclei, "-l", str(target_list),
             "-jsonl", "-silent", "-no-color",

@@ -5,6 +5,7 @@ from unittest.mock import patch
 from wstrike.core.auth import AuthConfig
 from wstrike.core import proxy
 from wstrike.core.roe import RulesOfEngagement
+from wstrike.core.urls import base_domain
 from wstrike.core import techmap
 from wstrike.core.context import Context, Finding
 from wstrike.core import notify as notifymod
@@ -63,6 +64,34 @@ def test_roe_scope_and_deny():
 
 def test_roe_empty_allow_means_all():
     assert RulesOfEngagement().host_in_scope("anything.com")
+
+
+# --- base_domain (scope-critical, multi-part TLDs) ------------------------
+
+def test_base_domain_handles_multipart_tlds():
+    assert base_domain("api.acme.co.uk") == "acme.co.uk"
+    assert base_domain("shop.example.com.au") == "example.com.au"
+    assert base_domain("a.b.example.com") == "example.com"
+    assert base_domain("example.com") == "example.com"
+
+
+# --- global rate budget division ------------------------------------------
+
+def test_effective_rate_is_a_true_global_ceiling():
+    from pathlib import Path
+    from wstrike.core.context import Context
+
+    def ctx(divisor, split, rate=150):
+        c = Context(target="x", workdir=Path("/tmp/_r"), profile={}, mode="auto",
+                    roe=RulesOfEngagement(rate_limit=rate), rate_divisor=divisor)
+        c.data["_rate_split"] = split
+        return c
+
+    assert ctx(1, 1).effective_rate() == 150
+    assert ctx(3, 1).effective_rate() * 3 <= 150     # 3 targets stay within cap
+    assert ctx(1, 2).effective_rate() * 2 <= 150     # 2 modules in a phase
+    assert ctx(5, 2).effective_rate() * 10 <= 150
+    assert ctx(1000, 1).effective_rate() == 1        # never below 1
 
 
 # --- techmap --------------------------------------------------------------

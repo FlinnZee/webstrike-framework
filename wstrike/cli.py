@@ -76,7 +76,7 @@ def _workdir_for(target: str, output: str | None) -> Path:
     return Path(output or "runs") / f"{safe}_{stamp}"
 
 
-async def _scan_one(target, args, profile, sem, store_lock, snapshot=None):
+async def _scan_one(target, args, profile, sem, store_lock, snapshot=None, rate_divisor=1):
     only = [m.strip() for m in args.only.split(",")] if args.only else None
     if snapshot:
         workdir, mode = Path(args.resume), snapshot["mode"]
@@ -88,6 +88,7 @@ async def _scan_one(target, args, profile, sem, store_lock, snapshot=None):
         roe=RulesOfEngagement.from_profile(profile),
         auth=AuthConfig.from_profile(profile).merge_cli(args.header, args.cookie),
         proxy=args.proxy or profile.get("proxy", ""),
+        rate_divisor=rate_divisor,   # split the global rate budget across targets
     )
     completed = checkpoint.restore_into(ctx, snapshot) if snapshot else []
     modules = _build_modules(profile, only)
@@ -124,9 +125,12 @@ async def _drive(targets, args, profile, snapshot) -> list:
     conc = max(1, args.concurrency or int(profile.get("concurrency", 3)))
     sem = asyncio.Semaphore(conc)
     store_lock = asyncio.Lock()
+    # At most `conc` targets ever run at once, so that's how far the global rate
+    # budget must stretch — each target's tools get rate_limit / divisor.
+    rate_divisor = min(conc, len(targets))
     coros = [
         _scan_one(t, args, profile, sem, store_lock,
-                  snapshot=snapshot if i == 0 else None)
+                  snapshot=snapshot if i == 0 else None, rate_divisor=rate_divisor)
         for i, t in enumerate(targets)
     ]
     return await asyncio.gather(*coros, return_exceptions=True)

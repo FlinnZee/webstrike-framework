@@ -19,6 +19,7 @@ class Module(ABC):
     requires: list[str] = []      # logical tool names (see core/tools.py)
     description: str = ""
     intrusive: bool = False       # active/noisy? gated in manual mode
+    rate_aware: bool = False      # honors a req/sec budget? -> shares the RoE ceiling
 
     def __init__(self, options: dict | None = None) -> None:
         self.options = options or {}

@@ -59,6 +59,12 @@ class Orchestrator:
             if not runnable:
                 continue
 
+            # How many rate-aware modules share this phase concurrently — used to
+            # split the RoE req/sec budget so the aggregate stays within the cap.
+            self.ctx.data["_rate_split"] = max(
+                1, sum(1 for m in runnable if m.rate_aware)
+            )
+
             phase(f"PHASE: {ph}  ({len(runnable)} module(s))")
             results = await asyncio.gather(
                 *(m.run(self.ctx) for m in runnable), return_exceptions=True

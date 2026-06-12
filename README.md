@@ -71,7 +71,8 @@ Set in the profile under `roe:` and enforced hardest in `auto` mode:
 roe:
   scope_allow: ["*.acme.com", "acme.com"]   # only touch these hosts ([] = any)
   deny_paths:  ["/logout", "/*/delete*"]    # never request these paths
-  rate_limit:  100                          # global req/sec ceiling
+  rate_limit:  100                          # GLOBAL req/sec ceiling — split across
+                                            # concurrent targets x rate-aware modules
   max_subdomains: 0                         # 0 = unlimited
 ```
 
