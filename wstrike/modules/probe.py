@@ -99,16 +99,30 @@ class HttpProbe(Module):
 
     @staticmethod
     def _parse_whatweb(stdout: str) -> list[str] | None:
-        """whatweb --log-json emits one JSON object per target. Return plugin
-        names, or None if the target didn't respond."""
-        for line in stdout.splitlines():
-            line = line.strip()
-            if not line.startswith("{"):
-                continue
-            try:
-                obj = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            plugins = obj.get("plugins", {})
-            return sorted(plugins.keys()) if plugins else []
-        return None
+        """Return the detected plugin names, or None if the target didn't respond.
+
+        whatweb `--log-json` emits a JSON *array* of target objects (empty array
+        when nothing responded). Parse the array properly rather than relying on
+        objects being line-delimited; fall back to line-by-line for older builds.
+        """
+        stdout = stdout.strip()
+        if not stdout:
+            return None
+        records: list = []
+        try:
+            data = json.loads(stdout)
+            if isinstance(data, list):
+                records = [d for d in data if isinstance(d, dict)]
+            elif isinstance(data, dict):
+                records = [data]
+        except json.JSONDecodeError:
+            for line in stdout.splitlines():
+                line = line.strip().rstrip(",")
+                if line.startswith("{"):
+                    try:
+                        records.append(json.loads(line))
+                    except json.JSONDecodeError:
+                        continue
+        if not records:
+            return None                      # empty array = no response = not live
+        return sorted((records[0].get("plugins") or {}).keys())

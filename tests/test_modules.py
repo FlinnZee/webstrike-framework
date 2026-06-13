@@ -95,6 +95,17 @@ def test_oast_candidates_and_correlate():
     assert hits == {"ws1": ("u1", "next")}        # ws1 != ws10
 
 
+def test_whatweb_parser_handles_array_and_empty():
+    from wstrike.modules.probe import HttpProbe
+    # whatweb --log-json emits a JSON array of target objects
+    arr = '[\n{"target":"http://x","plugins":{"nginx":{},"PHP":{}}}\n]'
+    assert HttpProbe._parse_whatweb(arr) == ["PHP", "nginx"]
+    assert HttpProbe._parse_whatweb("[\n]") is None       # no response = not live
+    assert HttpProbe._parse_whatweb("") is None
+    # older line-delimited fallback still works
+    assert HttpProbe._parse_whatweb('{"plugins":{"Apache":{}}}') == ["Apache"]
+
+
 def test_oast_availability():
     assert not OastSsrf().available()
     assert OastSsrf(options={"payload": "x.oast.fun"}).available()
