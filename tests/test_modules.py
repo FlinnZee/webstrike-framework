@@ -95,6 +95,31 @@ def test_oast_candidates_and_correlate():
     assert hits == {"ws1": ("u1", "next")}        # ws1 != ws10
 
 
+def test_probe_uses_output_not_exit_code(tmp_path):
+    # whatweb can exit non-zero (a --log-json flush quirk) yet emit a valid
+    # fingerprint; the host must still be recorded live, not silently dropped.
+    from wstrike.modules.probe import HttpProbe
+
+    json_out = '[{"target":"x","plugins":{"HTTPServer":{},"Python":{}}}]'
+
+    class R:
+        returncode = 1
+        ok = False
+        stdout = json_out
+        stderr = "closed stream (IOError)"
+        def lines(self): return []
+
+    async def fake(cmd, timeout=0, stdin=None):
+        return R()
+
+    ctx = Context(target="http://127.0.0.1:9", workdir=tmp_path, profile={},
+                  roe=RulesOfEngagement())
+    with patch.object(runner, "run", fake):
+        _run(HttpProbe().run(ctx))
+    assert any("Live web service" in f.title for f in ctx.findings)
+    assert ctx.data["live_urls"] == ["http://127.0.0.1:9"]
+
+
 def test_whatweb_parser_handles_array_and_empty():
     from wstrike.modules.probe import HttpProbe
     # whatweb --log-json emits a JSON array of target objects

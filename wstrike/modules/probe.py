@@ -58,7 +58,11 @@ class HttpProbe(Module):
             res = await runner.run(
                 [ww, "--no-errors", "-a", "3", "--log-json=-", *auth, url], timeout=60
             )
-            if not res.ok or not res.stdout.strip():
+            # Don't gate on the exit code: whatweb has an intermittent
+            # --log-json flush quirk that exits non-zero even when it produced a
+            # valid fingerprint. Trust the parsed output instead — an empty
+            # result (no response) is what marks a host as not-live.
+            if not res.stdout.strip():
                 continue
             techs = self._parse_whatweb(res.stdout)
             if techs is None:
